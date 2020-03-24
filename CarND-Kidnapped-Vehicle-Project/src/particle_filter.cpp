@@ -62,7 +62,25 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
    *  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
    *  http://www.cplusplus.com/reference/random/default_random_engine/
    */
-
+  // Create the variable for Randomness
+  std::default_random_engine gen;
+  // Variables to store the motion model estimated positions
+  double x_f, y_f, theta_f; 
+      
+  for(int i=0; i < num_particles; i++){
+    // According to the Bicycle motion model we have the following equations for the prediction (x,y,theta)
+    x_f = particles[i].x + (velocity/yaw_rate)*(sin(particles[i].theta + yaw_rate*delta_t) - sin(particles[i].theta));
+    y_f = particles[i].y + (velocity/yaw_rate)*(cos(particles[i].theta) - cos(particles[i].theta + yaw_rate*delta_t));
+    theta_f = particles[i].theta + yaw_rate*delta_t;
+    // These lines creates a normal (Gaussian) distribution for x, y, and theta
+    normal_distribution<double> dist_x(x_f, std_pos[0]);
+    normal_distribution<double> dist_y(y_f, std_pos[1]);
+    normal_distribution<double> dist_theta(theta_f, std_pos[2]);
+    //Pick a random Value from the generated Gaussians and update the position of the particle
+    particles[i].x = dist_x(gen);
+    particles[i].y = dist_y(gen);
+    particles[i].theta = dist_theta(gen);
+  }
 }
 
 void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted, 
