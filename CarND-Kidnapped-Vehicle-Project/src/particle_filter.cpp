@@ -20,6 +20,7 @@
 
 using std::string;
 using std::vector;
+using std::normal_distribution; // Generates a Gaussian Distribution 
 
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
   /**
@@ -30,8 +31,26 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
    * NOTE: Consult particle_filter.h for more information about this method 
    *   (and others in this file).
    */
-  num_particles = 0;  // TODO: Set the number of particles
-
+  num_particles = 10;  // TODO: Set the number of particles
+  // Create the variable for Randomness
+  std::default_random_engine gen;
+  // This line creates a normal (Gaussian) distribution for x
+  normal_distribution<double> dist_x(x, std[0]);
+  // This line creates a normal (Gaussian) distribution for y
+  normal_distribution<double> dist_y(y, std[1]);
+  // This line creates a normal (Gaussian) distribution for theta
+  normal_distribution<double> dist_theta(theta, std[2]);
+  // Define a momentary particle
+  Particle init_particle;
+  //Initialize each particle with an uncertainty.
+  for(int i; i < num_particles; i++){
+    init_particle.x = dist_x(gen); 
+    init_particle.y = dist_y(gen);
+    init_particle.theta = dist_theta(gen);
+    init_particle.weight = 1.00;
+    particles.push_back(init_particle);
+  }
+  is_initialized = true; // Set the initialization flag
 }
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], 
