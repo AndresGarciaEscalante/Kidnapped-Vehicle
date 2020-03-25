@@ -94,6 +94,34 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
    *   during the updateWeights phase.
    */
 
+  //Momentary variables for the Ecluidean distance
+  double x1, y1, x2, y2,eucli_distance;
+  //Momentary variables to store the best score
+  int best_id;
+  double best_x,best_y;
+  //Compare each of the predicted measurements with the observation measurements
+  for(int i = 0;i < predicted.size();i++){
+    x1 = predicted[i].x;
+    y1 = predicted[i].y;
+    double best_eucli_distance = 100;
+    for(int j = 0; j < observations.size();j++){
+       x2 = observations[j].x;
+       y2 = observations[j].y;
+       //Calculate the Euclidean distance
+       eucli_distance = dist(x1, y1, x2, y2);
+       // If the distance is shorter than the previous one update the new distance
+       if(eucli_distance < best_eucli_distance ){
+         best_eucli_distance = eucli_distance;
+         best_id = observations[j].id;
+         best_x = observations[j].x;
+         best_y = observations[j].y;
+       }
+    }
+    // Assign the value the observation value to the predicted value.
+    predicted[i].id = best_id;
+    predicted[i].x = best_x;
+    predicted[i].y = best_y;
+  }
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
