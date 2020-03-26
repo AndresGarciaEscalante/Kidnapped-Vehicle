@@ -44,6 +44,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
   Particle init_particle;
   //Initialize each particle with an uncertainty.
   for(int i; i < num_particles; i++){
+    init_particle.id = i;
     init_particle.x = dist_x(gen); 
     init_particle.y = dist_y(gen);
     init_particle.theta = dist_theta(gen);
@@ -96,31 +97,33 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
 
   //Momentary variables for the Ecluidean distance
   double x1, y1, x2, y2,eucli_distance;
-  //Momentary variables to store the best score
-  int best_id;
-  double best_x,best_y;
+  int past_j;
   //Compare each of the predicted measurements with the observation measurements
-  for(int i = 0;i < predicted.size();i++){
-    x1 = predicted[i].x;
-    y1 = predicted[i].y;
-    double best_eucli_distance = 100;
-    for(int j = 0; j < observations.size();j++){
-       x2 = observations[j].x;
-       y2 = observations[j].y;
-       //Calculate the Euclidean distance
-       eucli_distance = dist(x1, y1, x2, y2);
-       // If the distance is shorter than the previous one update the new distance
-       if(eucli_distance < best_eucli_distance ){
-         best_eucli_distance = eucli_distance;
-         best_id = observations[j].id;
-         best_x = observations[j].x;
-         best_y = observations[j].y;
-       }
+  //std::cout << observations.size() << "   " << predicted.size() <<std::endl;
+  for(int i = 0;i < observations.size();i++){
+    x1 = observations[i].x;
+    y1 = observations[i].y;
+    double best_eucli_distance = 1000;
+    for(int j = 0; j < predicted.size();j++){
+      x2 = predicted[j].x;
+      y2 = predicted[j].y;
+      //Calculate the Euclidean distance
+      eucli_distance = dist(x1, y1, x2, y2);
+      // If the distance is shorter than the previous one update the new distance
+      if(eucli_distance < best_eucli_distance ){
+        //std::cout << "For observation: " << i << "The values " << eucli_distance << "   " <<  best_eucli_distance << "     Iteration number " << j <<std::endl;
+        best_eucli_distance = eucli_distance;
+        past_j = j;
+      }
     }
-    // Assign the value the observation value to the predicted value.
-    predicted[i].id = best_id;
-    predicted[i].x = best_x;
-    predicted[i].y = best_y;
+    observations[i].id = predicted[past_j].id;
+    //observations[i].x = predicted[past_j].x;
+    //observations[i].y = predicted[past_j].y;
+    predicted.erase(predicted.begin()+past_j);
+    /*for(int k = 0; k < predicted.size();k++ ){
+      std::cout<<predicted[k].id<< "  ";
+    }
+    std::cout<<" "<<std::endl;*/
   }
 }
 
@@ -140,7 +143,77 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
    *   and the following is a good resource for the actual equation to implement
    *   (look at equation 3.33) http://planning.cs.uiuc.edu/node99.html
    */
+  // Momentary variables for the Homogeneous Transformation
+  LandmarkObs temp;
+  double total_weight=0.0;
+  for(int i = 0; i < particles.size(); i++){
+    vector<LandmarkObs> observations_map_cordi;
+    //STEP 1  : Applying the homoegeneous transformation to convert the car's observations into world coordinates
+    for(int j = 0; j < observations.size(); j++){
+      temp.x = particles[i].x + (cos(particles[i].theta)*observations[j].x) - (sin(particles[i].theta)*observations[j].y);
+      temp.y = particles[i].y + (sin(particles[i].theta)*observations[j].x) + (cos(particles[i].theta)*observations[j].y);
+      observations_map_cordi.push_back(temp);   
+    } 
 
+    //STEP 2: Select the predicted landmarks that are in range of the sensor
+    double x,y;
+    int id; 
+    vector<LandmarkObs> prediction; 
+    for(int j = 0; j < map_landmarks.landmark_list.size(); j++){
+      id = map_landmarks.landmark_list[j].id_i; 
+      x = map_landmarks.landmark_list[j].x_f;
+      y = map_landmarks.landmark_list[j].y_f;
+      if((fabs(particles[i].x - x) <= sensor_range) && (fabs(particles[i].y - y) <= sensor_range)){
+        prediction.push_back(LandmarkObs {id,x,y});
+      }
+    }
+
+    //STEP 3: Associate the observations_map_cordi with the prediction of landmarks 
+    /*std::cout << "Before" << std::endl;
+    for (int k =0; k < observations_map_cordi.size();k++){
+      std::cout << observations_map_cordi[k].id << "  " << observations_map_cordi[k].id  <<std::endl;
+    }*/
+    dataAssociation(prediction, observations_map_cordi);
+    /*std::cout << "After" << std::endl;
+    for (int k =0; k < observations_map_cordi.size();k++){
+      std::cout << observations_map_cordi[k].id << "  " << observations_map_cordi[k].id  <<std::endl;
+    }*/
+
+    //STEP 4: Calculate the Particle weight
+    //Momentary variables
+    double multi_prob,x_cor,y_cor,mean_x,mean_y,sigma_x,sigma_y,norm,combine_prob = 1.0;
+    int past_k;
+    for(int j = 0; j < observations_map_cordi.size(); j++){ 
+      //Search the landmark values
+      for(int k = 0; k < prediction.size(); k++){
+        //std::cout<< k <<std::endl;
+        if(observations_map_cordi[j].id == prediction[k].id){
+          past_k = k;
+          break;
+        }
+      }
+      //Assign the Multivariate-Gaussian probability density variables
+      x_cor = observations_map_cordi[j].x;
+      y_cor = observations_map_cordi[j].y;
+      mean_x = prediction[past_k].x;
+      mean_y = prediction[past_k].y;
+      sigma_x = std_landmark[0];
+      sigma_y = std_landmark[1];
+      norm = 1/(2*M_PI*sigma_x*sigma_y);
+      multi_prob = norm*exp(-( ((x_cor-mean_x)*(x_cor-mean_x))/(2*sigma_x*sigma_x) + ((y_cor-mean_y)*(y_cor-mean_y))/(2*sigma_y*sigma_y)  ));
+      combine_prob*=multi_prob;
+    }
+    //std::cout<< "For particle : " << i << " The probability is: " <<combine_prob << std::endl;
+    particles[i].weight=combine_prob; 
+    total_weight+=combine_prob;
+  }
+  //std::cout<< " The total  probability is: " << total_weight << std::endl;
+  
+  //STEP 5: Normalize the particle weigths 
+  for(int i = 0; i < num_particles; i++){
+    particles[i].weight= particles[i].weight / total_weight;
+    std::cout<< "For particle :" << i << "Updated weight is :" <<particles[i].weight<<std::endl;
+  }
 }
 
 void ParticleFilter::resample() {
