@@ -31,7 +31,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
    * NOTE: Consult particle_filter.h for more information about this method 
    *   (and others in this file).
    */
-  num_particles = 10;  // TODO: Set the number of particles
+  num_particles = 1000;  // TODO: Set the number of particles
   // Create the variable for Randomness
   std::default_random_engine gen;
   // This line creates a normal (Gaussian) distribution for x
@@ -42,6 +42,8 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
   normal_distribution<double> dist_theta(theta, std[2]);
   // Define a momentary particle
   Particle init_particle;
+  // Define the size of the weights
+  weights.resize(num_particles);
   //Initialize each particle with an uncertainty.
   for(int i; i < num_particles; i++){
     init_particle.id = i;
@@ -70,9 +72,17 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
       
   for(int i=0; i < num_particles; i++){
     // According to the Bicycle motion model we have the following equations for the prediction (x,y,theta)
-    x_f = particles[i].x + (velocity/yaw_rate)*(sin(particles[i].theta + yaw_rate*delta_t) - sin(particles[i].theta));
-    y_f = particles[i].y + (velocity/yaw_rate)*(cos(particles[i].theta) - cos(particles[i].theta + yaw_rate*delta_t));
-    theta_f = particles[i].theta + yaw_rate*delta_t;
+    if(yaw_rate != 0){
+      x_f = particles[i].x + (velocity/yaw_rate)*(sin(particles[i].theta + yaw_rate*delta_t) - sin(particles[i].theta));
+      y_f = particles[i].y + (velocity/yaw_rate)*(cos(particles[i].theta) - cos(particles[i].theta + yaw_rate*delta_t));
+      theta_f = particles[i].theta + yaw_rate*delta_t;
+    }
+    else{
+      x_f = particles[i].x + velocity*delta_t*cos(particles[i].theta);
+      y_f = particles[i].y + velocity*delta_t*sin(particles[i].theta);
+      theta_f = particles[i].theta;
+    }
+    
     // These lines creates a normal (Gaussian) distribution for x, y, and theta
     normal_distribution<double> dist_x(x_f, std_pos[0]);
     normal_distribution<double> dist_y(y_f, std_pos[1]);
@@ -111,19 +121,12 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
       eucli_distance = dist(x1, y1, x2, y2);
       // If the distance is shorter than the previous one update the new distance
       if(eucli_distance < best_eucli_distance ){
-        //std::cout << "For observation: " << i << "The values " << eucli_distance << "   " <<  best_eucli_distance << "     Iteration number " << j <<std::endl;
         best_eucli_distance = eucli_distance;
         past_j = j;
       }
     }
     observations[i].id = predicted[past_j].id;
-    //observations[i].x = predicted[past_j].x;
-    //observations[i].y = predicted[past_j].y;
     predicted.erase(predicted.begin()+past_j);
-    /*for(int k = 0; k < predicted.size();k++ ){
-      std::cout<<predicted[k].id<< "  ";
-    }
-    std::cout<<" "<<std::endl;*/
   }
 }
 
@@ -163,22 +166,15 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
       id = map_landmarks.landmark_list[j].id_i; 
       x = map_landmarks.landmark_list[j].x_f;
       y = map_landmarks.landmark_list[j].y_f;
-      if((fabs(particles[i].x - x) <= sensor_range) && (fabs(particles[i].y - y) <= sensor_range)){
+      //std:: cout << particles[i].x << "   " << particles[i].y<< std::endl;
+      if((fabs(particles[i].x - x) <= sensor_range+5) && (fabs(particles[i].y - y) <= sensor_range+5)){
         prediction.push_back(LandmarkObs {id,x,y});
       }
     }
 
     //STEP 3: Associate the observations_map_cordi with the prediction of landmarks 
-    /*std::cout << "Before" << std::endl;
-    for (int k =0; k < observations_map_cordi.size();k++){
-      std::cout << observations_map_cordi[k].id << "  " << observations_map_cordi[k].id  <<std::endl;
-    }*/
     dataAssociation(prediction, observations_map_cordi);
-    /*std::cout << "After" << std::endl;
-    for (int k =0; k < observations_map_cordi.size();k++){
-      std::cout << observations_map_cordi[k].id << "  " << observations_map_cordi[k].id  <<std::endl;
-    }*/
-
+    
     //STEP 4: Calculate the Particle weight
     //Momentary variables
     double multi_prob,x_cor,y_cor,mean_x,mean_y,sigma_x,sigma_y,norm,combine_prob = 1.0;
@@ -203,16 +199,13 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
       multi_prob = norm*exp(-( ((x_cor-mean_x)*(x_cor-mean_x))/(2*sigma_x*sigma_x) + ((y_cor-mean_y)*(y_cor-mean_y))/(2*sigma_y*sigma_y)  ));
       combine_prob*=multi_prob;
     }
-    //std::cout<< "For particle : " << i << " The probability is: " <<combine_prob << std::endl;
-    particles[i].weight=combine_prob; 
+    weights[i]=combine_prob; 
     total_weight+=combine_prob;
   }
-  //std::cout<< " The total  probability is: " << total_weight << std::endl;
   
   //STEP 5: Normalize the particle weigths 
-  for(int i = 0; i < num_particles; i++){
-    particles[i].weight= particles[i].weight / total_weight;
-    std::cout<< "For particle :" << i << "Updated weight is :" <<particles[i].weight<<std::endl;
+  for(int i = 0; i < weights.size(); i++){
+    weights[i] = weights[i] / total_weight;
   }
 }
 
@@ -223,7 +216,30 @@ void ParticleFilter::resample() {
    * NOTE: You may find std::discrete_distribution helpful here.
    *   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
    */
-
+  
+  //Momentary variables for the Resampling wheel
+  double beta = 0.0;
+  vector<Particle> temp_particle;
+  int index = rand() % num_particles; //Initialization of the first index position
+  std::default_random_engine gen;   // Create the variable for Randomness
+  double U,max_weight;
+  
+  for(int i = 0; i < num_particles; i++){
+    //Implement the random number from 0 to 2*MaxWeigth for U
+    max_weight = 2.0 * *max_element(weights.begin(), weights.end());
+    U = max_weight*( (double)rand() / (double)RAND_MAX );
+    beta = beta + U ;
+    while(weights[index] < beta){
+      beta = beta - weights[index];
+      index = (index + 1) % num_particles;
+    }   
+    //Store all the information from the selected index 
+    temp_particle.push_back(particles[index]);
+  }
+  //Replace the old particles with the new ones 
+  for(int j = 0; j < temp_particle.size();j++){
+    particles[j] = temp_particle[j];
+  }
 }
 
 void ParticleFilter::SetAssociations(Particle& particle, 
