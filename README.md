@@ -4,7 +4,7 @@
 
 ## Installation:
 
-The [CarND-Kidnapped-Vehicle-Project](/CarND-Kidnapped-Vehicle-Projects) folder in the repository provides with all the installation steps to ***download and execute the simulator***. 
+The [CarND-Kidnapped-Vehicle-Project](https://github.com/AndresGarciaEscalante/Kidnapped-Vehicle/tree/master/CarND-Kidnapped-Vehicle-Project) README.md in the repository provides with all the installation steps to ***download and execute the simulator***. 
 
 Once the simulator is installed follow the next steps to run the code:
 
